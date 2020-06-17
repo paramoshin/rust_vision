@@ -2,6 +2,7 @@ extern crate image;
 
 use std::cmp;
 use std::u8;
+use std::f64;
 use std::path::Path;
 
 #[derive(Clone)]
@@ -98,16 +99,9 @@ impl Image {
         for y in 0..self.h {
             for x in 0..self.w {
                 let idx = self.get_idx(x, y, c);
-                let new_col = self.data[idx] as f64 * v;
-                if new_col > u8::MAX as f64 {
-                    self.data[idx] = u8::MAX;
-                    continue;
-                }
-                if new_col < u8::MIN as f64 {
-                    self.data[idx] = u8::MIN;
-                    continue;
-                }
-                self.data[idx] = (self.data[idx] as f64 * v) as u8;
+                let new_col = self.data[idx] as f64 + (v * 255.0);
+                let new_col = Image::float_to_rgb(new_col);
+                self.data[idx] = new_col as u8;
             }
         }
     }
@@ -116,9 +110,133 @@ impl Image {
         for y in 0..self.h {
             for x in 0..self.w {
                 let idx = self.get_idx(x, y, c);
-                hsv[idx] = hsv[idx] * v;
+                if c < 2 {
+                    hsv[idx] = hsv[idx] + v;
+                } else {
+                    hsv[idx] = hsv[idx] + v * 255.0;
+                }
             }
         }
+    }
+
+    pub fn scale_color_rgb(&mut self, c: u32, v: f64) {
+        for y in 0..self.h {
+            for x in 0..self.w {
+                let idx = self.get_idx(x, y, c);
+                self.data[idx] = Image::float_to_rgb(v * self.data[idx] as f64);
+            }
+        }
+    }
+
+    pub fn scale_color_hsv(&mut self, hsv: &mut Vec<f64>, c: u32, v: f64) {
+        for y in 0..self.h {
+            for x in 0..self.w {
+                let idx = self.get_idx(x, y, c);
+                    hsv[idx] *= v;
+            }
+        }
+    }
+
+    fn rgb_pix_to_hsv_pix(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+        let mut h: f64;
+        let s: f64;
+        let v: f64;
+
+        let cmin = cmp::min(r, cmp::min(g, b));
+        let cmax = cmp::max(r, cmp::max(g, b));
+
+        v = cmax as f64;
+        let delta = (cmax - cmin) as f64;
+        if delta < 0.00001 {
+            s = 0.0;
+            h = 0.0;
+            return (h, s, v);
+        }
+        if cmax == 0 {
+            s = 0.0;
+            h = 0.0;
+            return (h, s, v);
+        } else {
+            s = delta / cmax as f64;
+        }
+        h = match cmax {
+            max if r >= max => (g as f64 - b as f64) / delta,
+            max if g >= max => 2.0 + (b as f64 - r as f64) / delta,
+            _               => 4.0 + (r as f64 - g as f64) / delta,
+        };
+        h *= 60.0;
+        if h < 0.0 {
+            h += 360.0
+        }
+        (h, s, v)
+    }
+
+    fn float_to_rgb(f: f64) -> u8 {
+        if f > u8::MAX as f64 {
+            u8::MAX
+        } else if f < u8::MIN as f64 {
+            u8::MIN
+        } else {
+            f as u8
+        }
+    }
+
+    fn hsv_pix_to_rgb_pix(h: f64, s: f64, v: f64) -> (u8, u8, u8) {
+        let r: u8;
+        let g: u8;
+        let b: u8;
+
+        let hh = if h >= 360.0 {
+            0.0
+        } else {
+            h / 60.0
+        };
+        
+        let i = hh as u8;
+        let ff = hh - i as f64;
+        let p = v * (1.0 - s);
+        let q = v * (1.0 - (s * ff));
+        let t = v * (1.0 - (s * (1.0 - ff)));
+
+        let v = Image::float_to_rgb(v);
+        let p = Image::float_to_rgb(p);
+        let q = Image::float_to_rgb(q);
+        let t = Image::float_to_rgb(t);
+
+        match i {
+            0 => {
+                r = v;
+                g = t;
+                b = p;
+            },
+            1 => {
+                r = q;
+                g = v;
+                b = p;
+            },
+            2 => {
+                r = p;
+                g = v;
+                b = t;
+            },
+            3 => {
+                r = p;
+                g = q;
+                b = v;
+            },
+            4 => {
+                r = t;
+                g = p;
+                b = v;
+            },
+            _ => {
+                r = v;
+                g = p;
+                b = q;
+            },
+        }
+
+        (r, g, b)
     }
 
     pub fn rgb_to_hsv(&self) -> Vec<f64> {
@@ -133,46 +251,11 @@ impl Image {
                 let g = self.data[g_idx];
                 let b = self.data[b_idx];
 
-                let v = cmp::max(r, cmp::max(g, b)) as f64 / 255.0;
-                let m = cmp::min(r, cmp::min(g, b)) as f64 / 255.0;
-                let c = v - m;
+                let(h, s, v) = Image::rgb_pix_to_hsv_pix(r, g, b);
 
-                let s: f64;
-                if v == 0.0 {
-                    s = 0.0;
-                } else {
-                    s = c / v;
-                }
-
+                hsv_data[r_idx] = h;
                 hsv_data[g_idx] = s;
                 hsv_data[b_idx] = v;
-
-                let mut h: f64 = 0.0;
-                if c == 0.0 {
-                    h = 0.0;
-                    hsv_data[r_idx] = h;
-                    continue;
-                }
-
-                let r = r as f64 / 255.0;
-                let g = g as f64 / 255.0;
-                let b = b as f64 / 255.0;
-
-                if v == r {
-                    h = (g - b) / c;
-                }
-                if v == g {
-                    h = ((b - r) / c) + 2.0;
-                }
-                if v == b {
-                    h = ((r - g) / c) + 4.0;
-                }
-                if h < 0.0 {
-                    h = (h / 6.0) + 1.0;
-                } else {
-                    h = h / 6.0;
-                }
-                hsv_data[b_idx] = h;
             }
         }
         hsv_data
@@ -188,47 +271,63 @@ impl Image {
                 let h = hsv[r_idx];
                 let s = hsv[g_idx];
                 let v = hsv[b_idx];
-         
-                let h_i = (h / 6.0).floor() as usize % 6;
-                let v_min = (1.0 - s) * v;
-                let a = (v - v_min) * (((h as usize % 6) + 6) / 6) as f64;
-                let v_inc = v_min + a;
-                let v_dec = v - a;
 
-                let mut r = v;
-                let mut g = v_inc;
-                let mut b = v_min;
-
-                if h_i == 1 {
-                    r = v_dec;
-                    g = v;
-                    b = v_min
-                }
-                if h_i == 2 {
-                    r = v_min;
-                    g = v;
-                    b = v_inc;
-                }
-                if h_i == 3 {
-                    r = v_min;
-                    g = v_dec;
-                    b = v;
-                }
-                if h_i == 4 {
-                    r = v_inc;
-                    g = v_min;
-                    b = v;
-                }
-                if h_i == 5 {
-                    r = v;
-                    g = v_min;
-                    b = v_dec;
-                }
-
-                self.data[r_idx] = (r * 255.0) as u8;
-                self.data[g_idx] = (g * 255.0) as u8;
-                self.data[b_idx] = (b * 255.0) as u8;
+                let (r, g, b) = Image::hsv_pix_to_rgb_pix(h, s, v);
+                
+                self.data[r_idx] = r;
+                self.data[g_idx] = g;
+                self.data[b_idx] = b;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_hsv_to_rgb() {
+        let r: u8 = 0;
+        let g: u8 = 0;
+        let b: u8 = 0;
+        let (h, s, v) = Image::rgb_pix_to_hsv_pix(r, g, b);
+        assert_eq!((0.0, 0.0, 0.0), Image::rgb_pix_to_hsv_pix(r, g, b));
+        assert_eq!(Image::hsv_pix_to_rgb_pix(h, s, v), (r, g, b));
+
+        let r: u8 = 255;
+        let g: u8 = 0;
+        let b: u8 = 0;
+        let (h, s, v) = Image::rgb_pix_to_hsv_pix(r, g, b);
+        assert_eq!((0.0, 1.0, 255.0), (h, s, v));
+        assert_eq!(Image::hsv_pix_to_rgb_pix(h, s, v), (r, g, b));
+
+        let r: u8 = 0;
+        let g: u8 = 255;
+        let b: u8 = 0;
+        let (h, s, v) = Image::rgb_pix_to_hsv_pix(r, g, b);
+        assert_eq!((120.0, 1.0, 255.0), (h, s, v));
+        assert_eq!(Image::hsv_pix_to_rgb_pix(h, s, v), (r, g, b));
+        
+        let r: u8 = 0;
+        let g: u8 = 0;
+        let b: u8 = 255;
+        let (h, s, v) = Image::rgb_pix_to_hsv_pix(r, g, b);
+        assert_eq!((240.0, 1.0, 255.0), (h, s, v));
+        assert_eq!(Image::hsv_pix_to_rgb_pix(h, s, v), (r, g, b));
+
+        let r: u8 = 255;
+        let g: u8 = 255;
+        let b: u8 = 255;
+        let (h, s, v) = Image::rgb_pix_to_hsv_pix(r, g, b);
+        assert_eq!((0.0, 0.0, 255.0), (h, s, v));
+        assert_eq!(Image::hsv_pix_to_rgb_pix(h, s, v), (r, g, b));
+
+        let r: u8 = 120;
+        let g: u8 = 200;
+        let b: u8 = 50;
+        let (h, s, v) = Image::rgb_pix_to_hsv_pix(r, g, b);
+        assert_eq!((92.0, 0.75, 200.0), (h, s, v));
+        assert_eq!(Image::hsv_pix_to_rgb_pix(h, s, v), (119, g, b));
     }
 }
