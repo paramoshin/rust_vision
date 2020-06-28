@@ -4,6 +4,7 @@ use std::cmp;
 use std::u8;
 use std::f64;
 use std::path::Path;
+use std::ops;
 
 #[derive(Clone)]
 pub struct Image {
@@ -28,7 +29,9 @@ impl SqaureBoxFilter {
     }
 
     pub fn new_highpass_filter() -> Self {
-        let data: Vec<f64> = vec![0.0, -1.0, 0.0, -1.0, 4.0, -1.0, 0.0, -1.0, 0.0];
+        let data: Vec<f64> = vec![0.0, -1.0, 0.0, 
+                                  -1.0, 4.0, -1.0,
+                                  0.0, -1.0, 0.0];
         SqaureBoxFilter {
             w: 3,
             data: data
@@ -36,7 +39,9 @@ impl SqaureBoxFilter {
     }
 
     pub fn new_sharpen_filter() -> Self {
-        let data: Vec<f64> = vec![0.0, -0.5, 0.0, -0.5, 3.0, -0.5, 0.0, -0.5, 0.0];
+        let data: Vec<f64> = vec![0.0, -0.5, 0.0,
+                                  -0.5, 3.0, -0.5, 
+                                  0.0, -0.5, 0.0];
         SqaureBoxFilter {
             w: 3,
             data: data
@@ -44,14 +49,36 @@ impl SqaureBoxFilter {
     }
 
     pub fn new_emboss_filter() -> Self {
-        let data: Vec<f64> = vec![-2.0, -1.0, 0.0, -1.0, 1.0, 1.0, 0.0, 1.0, 2.0];
+        let data: Vec<f64> = vec![-2.0, -1.0, 0.0, 
+                                  -1.0, 1.0, 1.0, 
+                                  0.0, 1.0, 2.0];
         SqaureBoxFilter {
             w: 3,
             data: data
         }
     }
 
-    pub fn new_gaussian_filger(sigma: f64) -> Self {
+    pub fn new_sobel_filter_x() -> Self {
+        let data: Vec<f64> = vec![1.0, 0.0, -1.0, 
+                                  2.0, 0.0, -2.0, 
+                                  1.0, 0.0, -1.0];
+        SqaureBoxFilter {
+            w: 3,
+            data: data,
+        }
+    }
+
+    pub fn new_sobel_filter_y() -> Self {
+        let data: Vec<f64> = vec![1.0, 2.0, 1.0, 
+                                  0.0, 0.0, 0.0, 
+                                  -1.0, -2.0, -1.0];
+        SqaureBoxFilter {
+            w: 3,
+            data: data,
+        }
+    }
+
+    pub fn new_gaussian_filter(sigma: f64) -> Self {
         let w: u32 = if (sigma * 6.0).round() as u32 % 2 == 0 {
             (sigma * 6.0).round() as u32 + 1
         } else {
@@ -69,6 +96,145 @@ impl SqaureBoxFilter {
             w: w,
             data: data,
         }
+    }
+
+    pub fn from_data(data: Vec<f64>) -> Self {
+        SqaureBoxFilter {
+            w: (data.len() as f64).sqrt() as u32,
+            data: data,
+        }
+    }
+}
+
+impl ops::Add<&Image> for &Image {
+    type Output = Image;
+
+    fn add(self, other: &Image) -> Image {
+        assert_eq!(self.w, other.w);
+        assert_eq!(self.h, other.h);
+        assert_eq!(self.c, other.c);
+        let mut img = Image::new(self.w, self.h, self.c);
+        for y in 0..self.h {
+            for x in 0..self.w {
+                for c in 0..self.c {
+                    let v: u8 = Image::float_to_rgb(
+                        self.get_pixel(x, y, c) as f64 + other.get_pixel(x, y, c) as f64
+                    );
+                    img.set_pixel(x, y, c, v);
+                }
+            }
+        }
+        img
+    }
+}
+
+impl ops::Sub<&Image> for &Image {
+    type Output = Image;
+
+    fn sub(self, other: &Image) -> Image {
+        assert_eq!(self.w, other.w);
+        assert_eq!(self.h, other.h);
+        assert_eq!(self.c, other.c);
+        let mut img = Image::new(self.w, self.h, self.c);
+        for y in 0..self.h {
+            for x in 0..self.w {
+                for c in 0..self.c {
+                    let v: u8 = Image::float_to_rgb(
+                        self.get_pixel(x, y, c) as f64 - other.get_pixel(x, y, c) as f64
+                    );
+                    img.set_pixel(x, y, c, v);
+                }
+            }
+        }
+        img
+    }
+}
+
+impl ops::Mul<&Image> for &Image {
+    type Output = Image;
+
+    fn mul(self, other: &Image) -> Image {
+        assert_eq!(self.w, other.w);
+        assert_eq!(self.h, other.h);
+        assert_eq!(self.c, other.c);
+        let mut img = Image::new(self.w, self.h, self.c);
+        for y in 0..self.h {
+            for x in 0..self.w {
+                for c in 0..self.c {
+                    let v: u8 = Image::float_to_rgb(
+                        self.get_pixel(x, y, c) as f64 * other.get_pixel(x, y, c) as f64
+                    );
+                    img.set_pixel(x, y, c, v);
+                }
+            }
+        }
+        img
+    }
+}
+
+impl ops::Add<&Image> for Image {
+    type Output = Image;
+
+    fn add(self, other: &Image) -> Image {
+        assert_eq!(self.w, other.w);
+        assert_eq!(self.h, other.h);
+        assert_eq!(self.c, other.c);
+        let mut img = Image::new(self.w, self.h, self.c);
+        for y in 0..self.h {
+            for x in 0..self.w {
+                for c in 0..self.c {
+                    let v: u8 = Image::float_to_rgb(
+                        self.get_pixel(x, y, c) as f64 + other.get_pixel(x, y, c) as f64
+                    );
+                    img.set_pixel(x, y, c, v);
+                }
+            }
+        }
+        img
+    }
+}
+
+impl ops::Sub<&Image> for Image {
+    type Output = Image;
+
+    fn sub(self, other: &Image) -> Image {
+        assert_eq!(self.w, other.w);
+        assert_eq!(self.h, other.h);
+        assert_eq!(self.c, other.c);
+        let mut img = Image::new(self.w, self.h, self.c);
+        for y in 0..self.h {
+            for x in 0..self.w {
+                for c in 0..self.c {
+                    let v: u8 = Image::float_to_rgb(
+                        self.get_pixel(x, y, c) as f64 - other.get_pixel(x, y, c) as f64
+                    );
+                    img.set_pixel(x, y, c, v);
+                }
+            }
+        }
+        img
+    }
+}
+
+impl ops::Mul<&Image> for Image {
+    type Output = Image;
+
+    fn mul(self, other: &Image) -> Image {
+        assert_eq!(self.w, other.w);
+        assert_eq!(self.h, other.h);
+        assert_eq!(self.c, other.c);
+        let mut img = Image::new(self.w, self.h, self.c);
+        for y in 0..self.h {
+            for x in 0..self.w {
+                for c in 0..self.c {
+                    let v: u8 = Image::float_to_rgb(
+                        self.get_pixel(x, y, c) as f64 * other.get_pixel(x, y, c) as f64
+                    );
+                    img.set_pixel(x, y, c, v);
+                }
+            }
+        }
+        img
     }
 }
 
@@ -425,83 +591,106 @@ impl Image {
         img
     }
 
-    pub fn convolve(&mut self, f: SqaureBoxFilter, preserve: bool) {
-        if preserve {
-            for y in 0..self.h {
-                for x in 0..self.w {
-                    for c in 0..self.c {
-                        let mut v: f64 = 0.0;
-                        for i in 0..f.w {
-                            for j in 0..f.w {
-                                let x_idx: u32 = if x < (f.w / 2) + j {
-                                    0
-                                } else if (x as i32 - (f.w / 2) as i32 + j as i32) >= self.w as i32 {
-                                    self.w - 1
-                                } else {
-                                    x - (f.w / 2) + j
-                                };
-                                let y_idx: u32 = if y < (f.w / 2) + i {
-                                    0
-                                } else if (y as i32 - (f.w / 2) as i32 + i as i32) >= self.h as i32 {
-                                    self.h - 1
-                                } else {
-                                    y - (f.w / 2) + i
-                                };
-                                v += self.get_pixel(x_idx, y_idx, c) as f64 * f.data[(j + i * f.w) as usize];
-                            }
-                        }
-                        let v: u8 = if v < 0.0 {
-                            0
-                        } else if v > u8::MAX as f64 {
-                            u8::MAX
-                        } else {
-                            v as u8
-                        };
-                        self.set_pixel(x, y, c, v);
-                    }
-                }
+    fn conv_pix(&self, x: u32, y: u32, c: u32, f: &SqaureBoxFilter) -> f64 {
+        let mut v: f64 = 0.0;
+        for i in 0..f.w {
+            for j in 0..f.w {
+                let x_idx: u32 = if x < (f.w / 2) + j {
+                    0
+                } else if (x as i32 - (f.w / 2) as i32 + j as i32) >= self.w as i32 {
+                    self.w - 1
+                } else {
+                    x - (f.w / 2) + j
+                };
+                let y_idx: u32 = if y < (f.w / 2) + i {
+                    0
+                } else if (y as i32 - (f.w / 2) as i32 + i as i32) >= self.h as i32 {
+                    self.h - 1
+                } else {
+                    y - (f.w / 2) + i
+                };
+                v += self.get_pixel(x_idx, y_idx, c) as f64 * f.data[(j + i * f.w) as usize];
             }
         }
-        else {
-            let mut new_data: Vec<u8> = vec![0; (self.w * self.h) as usize];
-            for y in 0..self.h {
-                for x in 0..self.w {
-                    let mut v: f64 = 0.0;
-                    for c in 0..self.c {
-                        for i in 0..f.w {
-                            for j in 0..f.w {
-                                let x_idx: u32 = if x < (f.w / 2) + j {
-                                    0
-                                } else if (x as i32 - (f.w / 2) as i32 + j as i32) >= self.w as i32 {
-                                    self.w - 1
-                                } else {
-                                    x - (f.w / 2) + j
-                                };
-                                let y_idx: u32 = if y < (f.w / 2) + i {
-                                    0
-                                } else if (y as i32 - (f.w / 2) as i32 + i as i32) >= self.h as i32 {
-                                    self.h - 1
-                                } else {
-                                    y - (f.w / 2) + i
-                                };
-                                v += self.get_pixel(x_idx, y_idx, c) as f64 * f.data[(j + i * f.w) as usize];
-                            }
-                        }
-                    }
-                    let v: u8 = if v < 0.0 {
-                        0
-                    } else if v > u8::MAX as f64 {
-                        u8::MAX
+        v
+    }
+
+    pub fn convolve(&self, f: &SqaureBoxFilter, preserve: bool) -> Self {
+
+        let mut img = if preserve {
+            Image::new(self.w, self.h, self.c)
+        } else {
+            Image::new(self.w, self.h, 1)
+        };
+        
+        for y in 0..self.h {
+            for x in 0..self.w {
+                let mut v: f64 = 0.0;
+                for c in 0..self.c {
+                    if preserve {
+                        let v = self.conv_pix(x, y, c, f);
+                        let v = Image::float_to_rgb(v);
+                        img.set_pixel(x, y, c, v);
                     } else {
-                        v as u8
-                    };
+                        v += self.conv_pix(x, y, c, f);
+                    }
+                }
+                if !preserve {
+                    let v = Image::float_to_rgb(v);
                     let idx = self.get_idx(x, y, 0);
-                    new_data[idx] = v;
+                    img.data[idx] = v;
                 }
             }
-            self.data = new_data;
-            self.c = 1;
         }
+        img
+    }
+
+    pub fn min_max_normalize(data: &Vec<i32>, w: u32, h: u32) -> Vec<u8> {
+        let mut norm_data: Vec<u8> = vec![0; (w * h) as usize];
+
+        let min_: i32 =  match data.iter().min() {
+            Some(min) => *min,
+            None      => 0
+        };
+        let max_: i32 = match data.iter().max() {
+            Some(max) => *max,
+            None      => 0
+        };
+        let delta = max_ - min_;
+
+        for y in 0..h {
+            for x in 0..w {
+                let idx = (x + y * w) as usize;
+                if delta == 0 {
+                    norm_data[idx] = 0
+                } else {
+                    let v: f64 = u8::MIN as f64 + (((data[idx] - min_) as f64 * (u8::MAX as f64 - u8::MIN as f64)) / (max_ - min_) as f64);
+                    norm_data[idx] = v as u8;
+                }
+            }
+        }
+        norm_data
+    }
+
+    pub fn sobel(&self, sobel_x: &SqaureBoxFilter, sobel_y: &SqaureBoxFilter) -> (Self, Self) {
+        let g_x: Image = self.convolve(sobel_x, false);
+        let g_y: Image = self.convolve(sobel_y, false);
+
+        let mut g_data: Vec<i32> = vec![0; (self.w * self.h) as usize];
+        let mut g: Image = Image::new(self.w, self.h, 1);
+        let mut dir = Image::new(self.w, self.h, 1);
+
+        for y in 0..self.h {
+            for x in 0..self.w {
+                let g_x_pix: f64 = g_x.get_pixel(x, y, 0) as f64;
+                let g_y_pix: f64 = g_y.get_pixel(x, y, 0) as f64;
+                g_data[g.get_idx(x, y, 0)] = (g_x_pix.powi(2) + g_y_pix.powi(2)).sqrt() as i32;
+                dir.set_pixel(x, y, 0, Image::float_to_rgb((g_y_pix / g_x_pix).atan()));
+            }
+        }
+        g.data = Image::min_max_normalize(&g_data, self.w, self.h);
+
+        (g, dir)
     }
 }
 
